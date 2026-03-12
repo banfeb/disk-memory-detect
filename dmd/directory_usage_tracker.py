@@ -1,7 +1,12 @@
+from math import log
+import multiprocessing
 import os
 from tabulate import tabulate
 from dmd.config import Config
 from dmd.logger import get_logger
+from datetime import datetime, timedelta
+from multiprocessing import Pool, cpu_count
+
 logger = get_logger(__name__)
 
 class DirectoryUsageTracker(object):
@@ -9,9 +14,10 @@ class DirectoryUsageTracker(object):
         self.dir_path = config.RC.dir_path
         self.top_n = config.RC.top_n
         self.min_size = config.RC.min_size
+        self.lookback_days = config.RC.lookback_days
         self.target_folders = None
         logger.info(f"配置加载完成 - 扫描根目录: {self.dir_path}")
-        logger.info(f"配置加载完成 - 展示Top N: {self.top_n}, min_size: {self.min_size}字节")
+        logger.info(f"配置加载完成 - 展示Top N: {self.top_n}, min_size: {self.min_size}字节, lookback_days: {self.lookback_days}天")
         self.new_folders_tree = self._get_new_folders_tree()
         self.root_node = list(self.new_folders_tree.keys())[0]
 
@@ -24,6 +30,14 @@ class DirectoryUsageTracker(object):
         # 根据old_tree_folder, new_tree_folder创建一个中间变化树
         change_folders_tree = __class__.get_change_folders_tree(old_folders_tree, self.new_folders_tree, self.root_node)
         self.target_folders = __class__.get_top_n_memory_consuming_folders(self.root_node, change_folders_tree, self.top_n, self.min_size)
+        return self.target_folders
+
+    def get_add_of_folders(self):
+        """
+        获取新增的文件夹
+        :return: list[dict] 格式同 get_top_n_memory_consuming_folders
+        """
+        self.target_folders = __class__.get_top_n_recent_folders(self.root_node, self.new_folders_tree, self.top_n, self.min_size, self.lookback_days)
         return self.target_folders
 
     def __str__(self):
@@ -40,30 +54,114 @@ class DirectoryUsageTracker(object):
         return tabulate(table_data, headers="firstrow", tablefmt="grid", stralign="left", numalign="right")
 
     @staticmethod
-    def get_folders_tree(root_path: str):
+    def get_top_n_recent_folders(root_node: str, tree_folder: dict, top_n: int, min_size: int, lookback_days: int) -> list:
+        """
+        从构造文件树(tree_folder)中挑选最近创建时间在lookback_days内，且内存增加>min_size的文件夹。
+        如果父子文件夹都满足条件，子文件夹会优先计算。
+        :param root_node: 文件路径，也是字典的键
+        :param tree_folder: 文件树的字典表示
+        :param top_n: 挑选内存增加最多的top_n个文件夹
+        :param min_size: 文件夹内存增加量 > min_size才会被挑选，单位为字节
+        :param lookback_days: 追溯天数
+        :return: list[dict] 格式同 get_top_n_memory_consuming_folders
+        """
+        folders = []
+        now = datetime.now()
+        cutoff_time = now - timedelta(days=lookback_days)
+        change_size = tree_folder[root_node]['size']  # 使用当前size作为增量判断
+        
+        for child in tree_folder[root_node]["children"]:
+            child_node = list(child.keys())[0]
+            child_item = child[child_node]
+            child_ctime = datetime.fromtimestamp(child_item.get("creation_time", 0))
+            child_type = child_item["type"]
+
+            # 如果是父子关系，递归筛选
+            if child_type == "folder":
+                child_folders = __class__.get_top_n_recent_folders(child_node, child, top_n, min_size, lookback_days)
+                for cf in child_folders:
+                    folders.append(cf)
+                    # 减去子文件夹大小避免重复统计父级
+                    change_size -= list(cf.values())[0]
+
+            elif child_type == "file":
+                if child_ctime >= cutoff_time and child_item["size"] >= min_size:
+                    folders.append({child_node: child_item["size"]})
+                    change_size -= child_item["size"]
+
+        # 判断当前节点是否满足条件
+        if tree_folder[root_node]["type"] == "folder" and change_size >= min_size:
+            root_ctime = datetime.fromtimestamp(tree_folder[root_node].get("creation_time", 0))
+            if root_ctime >= cutoff_time:
+                folders.append({root_node: change_size})
+
+        # 排序并取top_n
+        target_folders = sorted(folders, key=lambda x: list(x.values())[0], reverse=True)[:top_n]
+        return target_folders
+
+
+    @staticmethod
+    def get_folders_tree(root_path: str, use_multiprocessing: bool = True):
         """
         将文件夹的层级关系用树(字典)表示
         :param root_path: 根路径
+        :param use_multiprocessing: 是否使用多进程加速
         :return: {父文件名：{'size': None, 'type': folder 或者 file， 'children': [子文件1， 子文件2] 或者 空, }
         """
-        tree = {root_path: {"size": None, "type": "folder", "children": []}}
+        try:
+            creation_time = os.path.getctime(root_path)
+        except (PermissionError, FileNotFoundError):
+            creation_time = None
+        tree = {root_path: {"size": None, "type": "folder", "children": [], "creation_time": creation_time}}
+        subdir_paths = []
         for entry in os.listdir(root_path):
             full_path = os.path.join(root_path, entry)
             try:
                 if os.path.isdir(full_path):
-                    tree[root_path]["children"].append(__class__.get_folders_tree(full_path))
+                    subdir_paths.append(full_path)
                 elif os.path.isfile(full_path):  # 需要进行判断，用于跳过无权限访问的文件
-                    tree[root_path]["children"].append({full_path: {"size": None, "type": "file"}})
+                    file_creation_time = os.path.getctime(full_path)
+                    tree[root_path]["children"].append({full_path: {"size": None, "type": "file", "creation_time": file_creation_time}})
             except PermissionError:
                 logger.warning(f"无法访问 {full_path} , 权限不够，已经跳过 ")
+
+        if subdir_paths:
+            valid_subdirs = []
+            for subdir_path in subdir_paths:
+                try:
+                    _ = os.listdir(subdir_path)
+                    valid_subdirs.append(subdir_path)
+                except PermissionError:
+                    logger.warning(f"无法访问 {subdir_path} , 权限不够，已经跳过 ")
+
+            if valid_subdirs:
+                if use_multiprocessing:
+                    with Pool(min(len(valid_subdirs), cpu_count())) as pool:
+                        subtrees = pool.starmap(
+                            __class__.get_folders_tree,
+                            [(subdir_path, False) for subdir_path in valid_subdirs]
+                        )
+                else:
+                    subtrees = [
+                        __class__.get_folders_tree(subdir_path, False)
+                        for subdir_path in valid_subdirs
+                    ]
+                tree[root_path]["children"].extend(subtrees)
         return tree
 
     @staticmethod
-    def get_folders_tree_size(tree_folders: dict):
+    def _size_worker(child: dict):
+        """多进程 worker：串行计算子树大小并返回 (size, 已设置好 size 的子树)"""
+        size = __class__.get_folders_tree_size(child, use_multiprocessing=False)
+        return size, child
+
+    @staticmethod
+    def get_folders_tree_size(tree_folders: dict, use_multiprocessing: bool = True):
         """
         计算get_tree_folders得到的文件夹的树形结构表示的文件或者文件夹大小
         :param tree_folders: 文件夹的树形结构表示
-        :return:
+        :param use_multiprocessing: 只在最顶层调用时传 True（第一层并行，子树内部强制串行）
+        :return: 总大小（byte）
         """
         for key, item in tree_folders.items():
             if item["type"] == "file":
@@ -73,12 +171,30 @@ class DirectoryUsageTracker(object):
                     item["size"] = 0
                     logger.warning(f"File disappeared during scan and was skipped: {key}")
                 return item["size"]
+
+        # ==================== 文件夹情况 ====================
         total_size = 0
         for key in tree_folders.keys():
-            for child in tree_folders[key]["children"]:
-                total_size += __class__.get_folders_tree_size(child)
+            children = tree_folders[key]["children"]
+
+            if use_multiprocessing and children:
+                with Pool(min(len(children), cpu_count())) as pool:
+                    sub_results = pool.map(
+                        __class__._size_worker,
+                        children
+                    )
+                # === 必须写回，保证所有层级 size 都被设置 ===
+                for i, (size, modified_child) in enumerate(sub_results):
+                    total_size += size
+                    children[i] = modified_child          # ← 这行必须保留
+
+            else:
+                # 串行递归（子调用默认关闭多进程）
+                for child in children:
+                    total_size += __class__.get_folders_tree_size(child, use_multiprocessing=False)
+
             tree_folders[key]["size"] = total_size
-        return total_size
+            return total_size
 
     @staticmethod
     def get_change_folders_tree(old_tree_folder, new_tree_folder, root_node):

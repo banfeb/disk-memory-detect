@@ -25,8 +25,10 @@ class RunSubCommand(CLISubcommand):
             logger.info("未检测到历史记录，首次执行扫描")
             start_time = time.time()
             tracker = DirectoryUsageTracker(config)
+            tracker.get_add_of_folders()
             logger.info(f"扫描完成，运行时间: {(time.time() - start_time):.2f}秒")
             file_manager.save(tracker.new_folders_tree)
+            print(tracker)
         else:
             logger.info("检测到历史记录，执行扫描并对比变化")
             start_time = time.time()
@@ -56,6 +58,10 @@ class RunSubCommand(CLISubcommand):
                                 type=int,
                                 default=0,
                                 help='文件夹增加的最小大小')
+        run_parser.add_argument('--lookback_days',
+                                type=int,
+                                default=7,
+                                help='检索前lookback_days到现在增加文件')
         return run_parser
 
 

@@ -26,6 +26,8 @@ class RunnerConfig:
     """显示增加内容最多的文件夹数目"""
     min_size: int = 0
     """文件夹增加的最小大小"""
+    lookback_days: int = 365
+    """检索的时间范围，单位天"""
 
 
 @dataclass(frozen=True)
@@ -41,7 +43,8 @@ class Config:
             rc = RunnerConfig(
                 dir_path=args.dir_path if args.dir_path is not None else RunnerConfig.dir_path,
                 top_n=args.topn if args.topn is not None else RunnerConfig.top_n,
-                min_size=args.minsize if args.minsize is not None else RunnerConfig.min_size)
+                min_size=args.minsize if args.minsize is not None else RunnerConfig.min_size,
+                lookback_days=args.lookback_days if args.lookback_days is not None else RunnerConfig.lookback_days)
         return cls(sv, rc)
 
 

@@ -20,6 +20,7 @@ def main():
         logger.info("未检测到历史记录，首次执行扫描")
         start_time = time.time()
         tracker = DirectoryUsageTracker(config)
+        tracker.get_add_of_folders()
         logger.info(f"扫描完成，运行时间: {(time.time() - start_time):.2f}秒")
         file_manager.save(tracker.new_folders_tree)
     else:

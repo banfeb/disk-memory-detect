@@ -6,50 +6,52 @@
 
 
 
-`dmd` 是一个用于 **检测磁盘文件大小、分析文件夹变化趋势、自动清理旧日志文件** 的 Python 命令行工具。  
-支持递归扫描文件夹、比较两次状态变化、找出空间增长最快的目录。未来将支持图形界面版本。
+`DMD` (Disk Memory Detector) is a powerful Python command-line tool used for detecting disk file sizes, analyzing folder change trends, and automatically cleaning up old log files. It helps users identify the directories with the fastest disk space growth by recursively scanning folders and comparing status changes at different time points, thereby better managing disk space.
+
+- When scanning for the first time, it can only count the increased directories from the past n days.
+- When not scanning the directory for the first time, it compares changes between two states to identify the directories with the fastest space growth.
 
 
 
-# 开始使用
+# Getting Started
 
 
 
-## 安装
+## Installation
 
 ```powershell
-// 打开终端cmd
+// Open terminal cmd
 git clone https://github.com/banfeb/disk-memory-detect.git
 ```
 
 
 
-## 运行
+## Running
 
-进入工作目录
+Enter the working directory
 
 ```cmd
 cd disk-memory-detect
 ```
 
-创建虚拟python环境或者激活已经存在的python环境
+Create a virtual Python environment or activate an existing one
 
 ```cmd
-// 创建python虚拟环境
+// Create Python virtual environment
 python -m venv .venv
-// 激活虚拟环境(powershell需要管理员权限)
+// Activate virtual environment (PowerShell requires administrator privileges)
 .venv\Scripts\activate
-// powershell的管理员权限命令
+// PowerShell administrator privilege command
 Set-ExecutionPolicy -Scope Process -ExecutionPolicy RemoteSigned
 ```
 
-安装相关包
+Install related packages
 
 ```
 pip install -e .
 ```
 
-运行命令
+Run command
 
 ```cmd
 // dmd run F:/F_Disk/projects/langchain_learn --topn 5 --minsize 0
@@ -58,16 +60,9 @@ dmd run [dir_path] [options]
 
 
 
-| 参数        | 说明                                           |
-| ----------- | ---------------------------------------------- |
-| `dir_path`  | 位置参数，需要扫描的磁盘，使用 `/`，比如`C:/`  |
-| `--topn`    | 可选参数，显示变化最大的前 N 个目录            |
-| `--minsize` | 可选参数，忽略小于指定大小（单位：字节）的变化 |
-
-
-
-# 未来开发
-
-- 通过监听避免每次扫盘
-- 开发图形界面
-
+| Parameter          | Description                                                     |
+| ------------------ | --------------------------------------------------------------- |
+| `dir_path`         | Positional parameter, the disk to scan, use `/`, e.g. `C:/`      |
+| `--topn`           | Optional parameter, display the top N directories with the largest changes |
+| `--minsize`        | Optional parameter, ignore changes smaller than the specified size (in bytes) |
+| `-- lookback_days` | Optional parameter, when scanning the disk for the first time, retrieve folders added within the past lookback_days |
