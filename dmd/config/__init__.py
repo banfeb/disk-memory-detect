@@ -16,7 +16,7 @@ class SaveConfig:
 @dataclass(frozen=True)
 class RunnerConfig:
     """运行(检索)的相关配置"""
-    dir_path: str = "F:/F_Disk/projects/langchain_learn"   # F:/F_Disk/projects/langchain_learn, F:/
+    dir_path: str = "C:/"   # F:/F_Disk/projects/langchain_learn, F:/
     """
       传入"F:\\"，会被解析为F:\进行扫盘并保存，因而保存为F:\\
       传入r"F:\\"，会被解析为F:\\进行扫盘，因而保存为F:\\\\

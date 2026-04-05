@@ -53,6 +53,20 @@ class DirectoryUsageTracker(object):
 
         return tabulate(table_data, headers="firstrow", tablefmt="grid", stralign="left", numalign="right")
 
+    # 在扫描到一些特殊文件时，获取的时间戳可能会不正确，在使用时进行安全处理
+    @staticmethod 
+    def safe_fromtimestamp(ts):
+        try: 
+            if ts is None: 
+                return None
+            ts = float(ts)
+            if not math.isfinite(ts) or ts < 0: 
+                return None
+            if ts > 1e11: # 防止毫秒级 ts /= 1000
+                return datetime.fromtimestamp(ts)
+        except (OSError, OverflowError, ValueError, TypeError): 
+            return None
+        
     @staticmethod
     def get_top_n_recent_folders(root_node: str, tree_folder: dict, top_n: int, min_size: int, lookback_days: int) -> list:
         """
@@ -73,7 +87,9 @@ class DirectoryUsageTracker(object):
         for child in tree_folder[root_node]["children"]:
             child_node = list(child.keys())[0]
             child_item = child[child_node]
-            child_ctime = datetime.fromtimestamp(child_item.get("creation_time", 0))
+            child_ctime = safe_fromtimestamp(child_item.get("creation_time", 0))
+            # child_ctime = datetime.fromtimestamp(child_item.get("creation_time", 0))
+                
             child_type = child_item["type"]
 
             # 如果是父子关系，递归筛选
