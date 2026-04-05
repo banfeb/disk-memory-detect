@@ -1,4 +1,5 @@
 from math import log
+import math
 import multiprocessing
 import os
 from tabulate import tabulate
@@ -58,14 +59,16 @@ class DirectoryUsageTracker(object):
     def safe_fromtimestamp(ts):
         try: 
             if ts is None: 
-                return None
+                return datetime.fromtimestamp(0)
             ts = float(ts)
             if not math.isfinite(ts) or ts < 0: 
-                return None
-            if ts > 1e11: # 防止毫秒级 ts /= 1000
-                return datetime.fromtimestamp(ts)
+                return datetime.fromtimestamp(0)
+            if ts > 1e11: 
+                # 防止毫秒级 
+                ts /= 1000
+            return datetime.fromtimestamp(ts)
         except (OSError, OverflowError, ValueError, TypeError): 
-            return None
+            return datetime.fromtimestamp(0)
         
     @staticmethod
     def get_top_n_recent_folders(root_node: str, tree_folder: dict, top_n: int, min_size: int, lookback_days: int) -> list:
@@ -87,7 +90,7 @@ class DirectoryUsageTracker(object):
         for child in tree_folder[root_node]["children"]:
             child_node = list(child.keys())[0]
             child_item = child[child_node]
-            child_ctime = safe_fromtimestamp(child_item.get("creation_time", 0))
+            child_ctime = __class__.safe_fromtimestamp(child_item.get("creation_time", 0))
             # child_ctime = datetime.fromtimestamp(child_item.get("creation_time", 0))
                 
             child_type = child_item["type"]
@@ -107,7 +110,7 @@ class DirectoryUsageTracker(object):
 
         # 判断当前节点是否满足条件
         if tree_folder[root_node]["type"] == "folder" and change_size >= min_size:
-            root_ctime = datetime.fromtimestamp(tree_folder[root_node].get("creation_time", 0))
+            root_ctime = __class__.safe_fromtimestamp(tree_folder[root_node].get("creation_time", 0))
             if root_ctime >= cutoff_time:
                 folders.append({root_node: change_size})
 

@@ -3,7 +3,6 @@ import argparse
 from dmd.logger import get_logger
 
 logger = get_logger(__name__)
-
 def main():
     parser = argparse.ArgumentParser(description='dmd CLI')
     subparsers = parser.add_subparsers(title='subcommand', dest='subcommand', required=True)
